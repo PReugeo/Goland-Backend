@@ -55,3 +55,59 @@
 ​	杀死作业
 
 ​	
+
+```xml
+<!-- yarn-site.xml -->
+
+<?xml version="1.0"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
+<configuration>
+    <property>
+        <name>yarn.resourcemanager.hostname</name>
+        <value>localhost</value>
+    </property>
+
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+
+	    <!-- yarn开启聚合 -->
+    <property>
+        <name>yarn.log-aggregation-enable</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>yarn.log-aggregation.retain-seconds</name>
+        <value>302400</value>
+	    <description>
+		     日志文件保存在文件系统（如HDFS文件系统）的最长时间，默认值是-1，即永久有效。
+		     这里配置的值是：7天 = 3600 * 24 * 7 = 302400
+		</description>
+    </property>
+<!-- Site specific YARN configuration properties -->
+
+
+```
+
+### YARN优点
+
+可扩展性(Scalability)
+
+可用性强
+
+利用率高
+
+多租户

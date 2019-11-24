@@ -6,6 +6,10 @@
 *   优点: 海量数据离线处理&易开发&易运行
 *   缺点: 无法实时流式计算
 
+### MapReduce过程概览
+
+![](/home/eugeo/文档/学习笔记/Java-golang-learning/bigData/MapReduce.assets/20181203204646963.png)
+
 ### 核心概念
 
 *   Spilit: 交由MapReduce作业来处理的数据库, 是MapReduce中最小的计算单元

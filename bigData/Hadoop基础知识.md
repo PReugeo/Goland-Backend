@@ -57,7 +57,7 @@ Hadoop各个组件均可以在XML文件中配置。*core-site.xml*配置通用�
 
 
 
-###伪分布模式设置
+### 伪分布模式设置
 
 1.  创建各个配置文件到Hadoop安装路径/etc/hadoop. 或者把/etc/hadoop目录复制到另一个位置, 然后把**-site.xml*这些配置文件放在该目录下.
 
@@ -254,6 +254,12 @@ hdfs namenode -format
               <scope>test</scope>
           </dependency>
   
+          <!--添加spring for hadoop 依赖-->
+          <dependency>
+              <groupId>org.springframework.data</groupId>
+              <artifactId>spring-data-hadoop</artifactId>
+              <version>2.5.0.RELEASE</version>
+          </dependency>
       </dependencies>
   ```
   
@@ -265,4 +271,44 @@ Q: 为什么在core-site.xml中设置副本系数为1, 查询到的确实3呢?
 A: 如果使用hadoopshell上传的(put), 才采用默认的副本系数1
 
 ​	如果使用java API上传的, 在本地我们没有手动设置副本系数, 所以采用的是hadoop自己的默认系数3
+
+### 使用
+
+```shell
+hadoop fs -copyFromLocal xxx \ xxx #从本地文件系统上传至HDFS
+hadoop fs -copyToLocal
+hadoop fs -ls
+```
+
+### 使用log4j
+
+在classpath下新建**log4j.properties**
+
+```properties
+log4j.rootLogger=INFO,logfile,stdout
+            
+#log4j.logger.org.springframework.web.servlet=INFO,db
+
+#log4j.logger.org.springframework.beans.factory.xml=INFO
+#log4j.logger.com.neam.stum.user=INFO,db
+
+#log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+#log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+#log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd HH\:mm\:ss} %p [%c] %X{remoteAddr}  %X{remotePort}  %X{remoteHost}  %X{remoteUser} operator\:[\u59D3\u540D\:%X{userName} \u5DE5\u53F7\:%X{userId}] message\:<%m>%n
+
+#write log into file
+log4j.appender.logfile=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.logfile.Threshold=warn
+log4j.appender.logfile.File=${webapp.root}\\logs\\main.log
+log4j.appender.logfile.DatePattern=.yyyy-MM-dd
+log4j.appender.logfile.layout=org.apache.log4j.PatternLayout
+log4j.appender.logfile.layout.ConversionPattern=[AppLog] %d{yyyy-MM-dd HH\:mm\:ss} %X{remoteAddr} %X{remotePort} %m %n
+
+
+#display in console
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.Threshold=info
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=[AppLog] %d{yyyy-MM-dd HH\:mm\:ss} %X{remoteAddr} %X{remotePort} %m %n
+```
 
