@@ -16,7 +16,7 @@
 
 ### 下载地址
 
->   ​	http://archive.cloudera.com/cdh5/cdh/5/
+​	[cdh5](	http://archive.cloudera.com/cdh5/cdh/5/)
 
 ### 配置Hive
 

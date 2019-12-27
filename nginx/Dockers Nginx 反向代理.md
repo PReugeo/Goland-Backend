@@ -1,4 +1,4 @@
-## Dockers Nginx 反向代理
+## Docker Nginx 反向代理
 
 ### 1.创建Nginx和要被反向代理的服务
 
