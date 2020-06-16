@@ -82,14 +82,13 @@
     wordCounts.collect
     ```
 
-    
 
 ## Spark SQL
 
-1.  ###概述
+1.  ### 概述
 
     1.  用来处理结构化数据
-    2.  Spark SQl 应用不局限于SQL
+    2.  Spark SQL 应用不局限于SQL
     3.  可以访问hive, json, parquet等文件数据
     4.  SQL只是Spark SQL的一个功能
     5.  xx提供了SQL的api, DataFrame和Dataset的API
@@ -368,7 +367,7 @@ object DataFrameRDDApp {
 
 ## 外部数据源
 
-###读写操作:
+### 读写操作:
 
 ```scala
 spark.read.format(foramtFile).load(path)
@@ -376,7 +375,7 @@ spark.read.format(foramtFile).load(path)
 spark.write.format(foramtFile).save(path)
 ```
 
-###处理parquet(列式存储格式)
+### 处理parquet(列式存储格式)
 
 1.  spark处理Parquet文件采用的是 path/to/table可以使用文件树访问文件列
 
@@ -428,7 +427,7 @@ spark.read.format("parquet").option("path","file:///home/hadoop/app/spark-2.1.0-
 spark.stop()
 ```
 
-###操作hive表和mysql表
+### 操作hive表和mysql表
 
 ```scala
 def main(args: Array[String]) {

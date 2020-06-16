@@ -8,7 +8,7 @@
 
 ### MapReduce过程概览
 
-![](/home/eugeo/文档/学习笔记/Java-golang-learning/bigData/MapReduce.assets/20181203204646963.png)
+![](D:\Java-golang-learning\bigData\MapReduce.assets/20181203204646963.png)
 
 ### 核心概念
 
@@ -111,6 +111,7 @@
             job.setPartitionerClass(MyPartitioner.class);
             //设置4个reducer， 每个分区一个
             job.setNumReduceTasks(4);
+    ```
   ```
 
 
@@ -121,7 +122,7 @@
 
 19888端口默认不开启
 
-```xml
+​```xml
     <!--jobhistory启动配置 mapred-site.xml-->
     <property>
         <name>mapreduce.jobhistory.address</name>
@@ -156,7 +157,7 @@
 		     这里配置的值是：7天 = 3600 * 24 * 7 = 302400
 		</description>
     </property>
-```
+  ```
 
 
 
@@ -166,3 +167,24 @@
 2.  只支持map和reduce方法
 3.  执行效率低下
 4.  不适合迭代多次,交互式,流失的处理
+
+## WordCount
+
+```java
+	public void map(Object key, Text value, Context context) throws IOException,InterruptedException {
+		StringTokenizer itr = new StringTokenizer(value.toString());
+		while(itr.hasMoreTokens()) {
+			word.set(itr.nextToken());
+			context.write(word, one);
+		}
+	}
+	public void reduce(Text	key, Iterable<IntWritable> values, Context context) throws IOException,InterruptedException {
+		int sum = 0;
+		for(IntWritable val:values) {
+			sum += val.get();
+		}
+		result.set(sum);
+		context.write(key,result);
+	}
+```
+
