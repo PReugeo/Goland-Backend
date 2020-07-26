@@ -444,7 +444,7 @@ netstat -anp | grep port #查看特定端口的进程
 |  Z   | zombie (terminated but not reaped by its parent) 僵死，进程已经终止但是尚未被其父进程获取信息。 |
 |  T   | stopped (either by a job control signal or because it is being traced) 结束，进程既可以被作业控制信号结束，也可能是正在被追踪 |
 
-![img](D:\Java-golang-learning\操作系统\img\进程图.png)
+![img](..\操作系统\img\进程图.png)
 
 
 
