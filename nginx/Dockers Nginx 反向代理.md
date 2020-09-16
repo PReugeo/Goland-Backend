@@ -1,6 +1,6 @@
-## Docker Nginx 反向代理
+# Docker Nginx 反向代理
 
-### 1.创建Nginx和要被反向代理的服务
+## 1.创建Nginx和要被反向代理的服务
 
 Nginx对应宿主机8080端口, 将conf.d文件夹挂载到宿主机
 
@@ -53,5 +53,57 @@ listen  80;
         proxy_pass  http://宿主机IP:web应用端口;
     }
 }
+```
+
+# 负载均衡
+
+```nginx
+user  nginx;
+worker_processes  1;
+
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+
+events {
+    worker_connections  1024;
+}
+
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    keepalive_timeout  65;
+
+    #gzip  on;
+
+    include /etc/nginx/conf.d/*.conf;
+    upstream server {
+        // 注意使用局域网或者 ip 不能使用 127.0.0.1 或者 localhost
+        server 172.19.207.192:9222;
+        server 172.19.207.192:9223;
+    }
+
+    server {
+        listen 80;
+        server_name 172.19.207.192;
+        location / {
+            proxy_pass http://server;
+            root html;
+            index index.html index.htm;
+        }
+    }
+}
+
 ```
 

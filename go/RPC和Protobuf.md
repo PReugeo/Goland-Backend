@@ -1,0 +1,411 @@
+# RPC
+
+RPC 是远程过程调用的缩写（Remote Procedure Call），通俗地说就是调用远处的一个函数，是分布式系统中不同节点间流行的通信方式。
+
+而由于 Protobuf 支持多种不同的语言，其本身特性也十分方便描述服务接口（也就是方法列表），因此非常适合作为 RPC 世界的接口交流语言。
+
+Go 语言标准库中提供了一个简单的 RPC 实现，其位置为 `net/rpc` 中。
+
+## RPC 入门
+
+### Hello World
+
+首先构造 HelloService 类型，其中 Hello 方法用于打印功能：
+
+```go
+// HelloService 定义 hello 方法的结构体
+type HelloService struct{}
+
+// Hello 方法打印 hello 
+// 其必须满足 Go 的 RPC 规则：方法只能有两个可序列化参数，第二个必须为指针类型，并返回一个 error，且必须是公开的方法
+func (p *HelloService) Hello(request string, reply *string) error {
+	*reply = "hello " + request
+	return nil
+}
+```
+
+然后就可以将 HelloService  注册成 RPC 函数
+
+```go
+// server.go
+func main() {
+	// 注册 RPC 服务
+	rpc.RegisterName("HelloService", new(HelloService))
+	// 打开 TCP 连接
+	listener, err := net.Listen("tcp", ":1234")
+	if err != nil {
+		log.Fatal("Listen TCP error:", err)
+	}
+
+	conn, err := listener.Accept()
+	if err != nil {
+		log.Fatal("Accept error:", err)
+	}
+	rpc.ServeConn(conn)
+}
+```
+
+注册后，`rpc.RegisterName` 方法会将 `HelloService` 所有满足 RPC 规则的对象方法注册为 RPC 函数，所有注册的方法会放在 `HelloService` 服务空间下，接下来我们可以建立一个 `client` 客户端来尝试连接调用该函数：
+
+```go
+// client.go
+func main() {
+	client, err := rpc.Dial("tcp", "localhost:1234")
+	if err != nil {
+		log.Fatal("dialing:", err)
+	}
+
+	var reply string
+    // 第一个参数为服务空间及服务方法名，第二第三个为定义的 rpc 方法的两个参数
+	err = client.Call("HelloService.Hello", "world", &reply)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(reply)
+}
+// go run server.go
+// go run client.go
+// hello world
+```
+
+### 更加安全规范的 RPC 服务
+
+在 RPC 应用中，一般有接口规范设计，服务端实现，客户端调用三种人员，在代码中也最好将其分离为 `api`, `client`, `server` 层
+
+在 `api`  层中需要声明服务名字和接口，同时还可以在接口规范部分对客户端调用增加简单的包装
+
+```go
+package api
+
+import "net/rpc"
+
+const HelloServiceName = "path/to/pkg.HelloService"
+
+type HelloServiceInterface interface {
+	Hello(request string, reply *string) error
+}
+
+func RegisterHelloService(svc HelloServiceInterface) error {
+	return rpc.RegisterName(HelloServiceName, svc)
+}
+
+type HelloServiceClient struct {
+	*rpc.Client
+}
+
+func (h HelloServiceClient) Hello(request string, reply *string) error {
+	return h.Client.Call(HelloServiceName + ".Hello", request, reply)
+}
+// 使其在编译时期就能报错而不是运行时报错
+var _ HelloServiceInterface = (*HelloServiceClient)(nil)
+
+func DialHelloService(network, address string) (*HelloServiceClient, error) {
+	c, err := rpc.Dial(network, address)
+	if err != nil {
+		return nil, err
+	}
+	return &HelloServiceClient{Client: c}, nil
+}
+
+```
+
+使用包装后的 `api` 层后的 `client` 层为
+
+```go
+func main() {
+	client, err := api.DialHelloService("tcp", "localhost:1234")
+	if err != nil {
+		log.Fatal("dialing: ", err)
+	}
+
+	var reply string
+	err = client.Hello("world", &reply)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(reply)
+}
+
+```
+
+可以直接调用 api 的方法进行 rpc 连接。
+
+`server` 层代码则为
+
+```go
+type HelloService struct {}
+
+func (p *HelloService) Hello(request string, reply *string) error {
+	*reply = "Hello: " + request
+	return nil
+}
+
+func main() {
+	_ = api.RegisterHelloService(new(HelloService))
+
+	listener, err := net.Listen("tcp", ":1234")
+	if err != nil {
+		log.Fatal("Listen TCP error:", err)
+	}
+
+	for {
+		conn, err :=  listener.Accept()
+		if err != nil {
+			log.Fatal("Accept error ", err)
+		}
+
+		go rpc.ServeConn(conn)
+	}
+}
+
+```
+
+在新的RPC服务端实现中，我们用RegisterHelloService函数来注册函数，这样不仅可以避免命名服务名称的工作，同时也保证了传入的服务对象满足了RPC接口的定义。最后我们新的服务改为支持多个TCP链接，然后为每个TCP链接提供RPC服务。
+
+### 使用 JSON 传输数据
+
+使用 `json` 只需要使用 `client` 和 `server` 中拨号和服务的方法改变一些即可，在 `server` 中调用
+
+```go
+go rpc.ServeCodec(jsonrpc.NewServerCodec(conn))
+```
+
+使用 `jsonrpc` 的编码器对传输数据进行编码即可。
+
+此时 `client` 端也需要改变
+
+```go
+conn, err := net.Dial("tcp", "localhost:1234")
+if err != nil {
+    log.Fatal("net Dail:", err)
+}
+client := rpc.NewClientWithCodec(jsonrpc.NewClientCodec(conn))
+var reply string
+err = client.Call("HelloService.Hello", "hello", &reply)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(reply)
+```
+
+使用 `net.Dial` 方法对 `RPC` 接口进行调用，连接时使用 `rpc.NewClientWithCodec(jsonrpc.NewClientCodec(conn))` 使用 `json` 的编码器进行编解码。
+
+使用 HTTP 协议传输 JSON 数据
+
+
+
+# Protobuf
+
+Protocol buffers 是一种语言中立，平台无关，可扩展的序列化数据的格式，可用于通信协议，数据存储等。其在序列化数据方面，相对于 XML 其更加小巧，更加快速，更加简单。甚至可以在无需部署程序的情况下更新数据结构。
+
+因此其很适合做数据存储或者 RPC 数据交换格式。
+
+
+
+## 使用
+
+```protobuf
+syntax = "proto3";
+message SearchRequest {
+	string query=1;
+	int32  page_num = 2;
+	int32  result_pre_page = 3;
+}
+```
+
+第一行如果不声明 `syntax="proto3"` 则默认使用 `proto2` 进行解析。
+
+### 1. 分配字段编号
+
+每个字段都有唯一的编号，这些字段编号用于标识消息二进制格式中的字段，并且在使用消息类型后不应该更改。范围 `1~15` 需要一个字节进行编码，而 `16~2047` 字段编号则需要两个字节。所以应该保留 1 到 15 作为非常频繁出现的消息元素，为未来可能出现的高频元素留出一些空间。
+
+可以指定的最小字段编号为 1， 最大为 $2^{29}-1$ 或者 536870911。不能使用数字 `19000-19999` 因为这些数字是保留字段，如果使用了保留字段则 protobuf 编译时会报错
+
+### 2.保留编号
+
+如果您通过完全删除某个字段或将其注释掉来更新消息类型，那么未来的用户可以在对该类型进行自己的更新时重新使用该字段号。如果稍后加载到了的旧版本 `.proto` 文件，则会导致服务器出现严重问题，例如数据混乱，隐私错误等等。确保这种情况不会发生的一种方法是指定删除字段的字段编号（或名称，这也可能会导致 JSON 序列化问题）为 `reserved`。如果将来的任何用户试图使用这些字段标识符，Protocol Buffers 编译器将会报错。
+
+```protobuf
+message Foo {
+  reserved 2, 15, 9 to 11;
+  reserved "foo", "bar";
+}
+```
+
+### 3.各个语言类型与 protobuf 对应关系
+
+`repeated` 字段：可以在一个 message 中重复任何数字多次，可以理解为数组
+
+![img](RPC%E5%92%8CProtobuf.assets/84_3.png)
+
+### 4.枚举类型
+
+protobuf 中可以在 `message` 类型中嵌入枚举类型
+
+```protobuf
+message SearchRequest {
+  string query = 1;
+  int32 page_number = 2;
+  int32 result_per_page = 3;
+  enum Corpus {
+    UNIVERSAL = 0;
+    WEB = 1;
+    IMAGES = 2;
+    LOCAL = 3;
+    NEWS = 4;
+    PRODUCTS = 5;
+    VIDEO = 6;
+  }
+  Corpus corpus = 4;
+}
+```
+
+枚举类型中一定要以 0 值开始
+
+- 枚举为 0 的是作为零值，当不赋值的时候，就会是零值。
+- 为了和 proto2 兼容。在 proto2 中，零值必须是第一个值。
+
+在不同 message 中使用相同名称的 Enum 值可以指定别名以和别的 message 中的区分开来，需要指定 `option` 
+
+`allow_alias=true;`
+
+```protobuf
+message MyMessage1 {
+  enum EnumAllowingAlias {
+    option allow_alias = true;
+    UNKNOWN = 0;
+    STARTED = 1;
+    RUNNING = 1;
+  }
+}
+message MyMessage2 {
+  enum EnumNotAllowingAlias {
+    UNKNOWN = 0;
+    STARTED = 1;
+    // RUNNING = 1;  // Uncommenting this line will cause a compile error inside Google and a warning message outside.
+  }
+}
+```
+
+对于无法识别的枚举值，不同的语言有不同的处理。对于Go语言来说，因为枚举类型以int32来表示，所以对应的值依然用int32解析出来，只不过没有对应的枚举值而已。这种情况还是会存在的，比如proto有改动，或者代码强行设置了一个未知的枚举值。
+
+**保留字段**
+
+您可以使用 `max` 关键字指定您的保留数值范围上升到最大可能值。
+
+```protobuf
+enum Foo {
+  reserved 2, 15, 9 to 11, 40 to max;
+  reserved "FOO", "BAR";
+}
+```
+
+### 5.其他类型和嵌套类型
+
+可以使用 `import` 引用其他 proto 文件中的定义
+
+其他类型
+
+```protobuf
+message SearchResponse {
+	repeated Result results = 1;
+}
+
+message Result {
+	string url = 1;
+	string title = 2;
+	repeated string snippets = 3;
+}
+```
+
+嵌套类型 
+
+```protobuf
+message SearchResponse {
+    message Result {
+        string url = 1;
+        string title = 2;
+        repeated string snippets = 3;
+    }
+	repeated Result results = 1;
+}
+```
+
+如果需要使用嵌套类型中的类型可以这样使用
+
+```protobuf
+message Search {
+	SearchResponse.Result result = 1;
+}
+```
+
+
+
+### 6.更新 message
+
+如果后面开发中需要对定义的 message 增加字段，这时就可以体现 protobuf 的优势了，不需要改动之前的代码，不过需要满足以下要求
+
+1. 不要改动原有字段的数据结构。
+2. 如果您添加新字段，则任何由代码使用“旧”消息格式序列化的消息仍然可以通过新生成的代码进行分析。您应该记住这些元素的默认值，以便新代码可以正确地与旧代码生成的消息进行交互。同样，由新代码创建的消息可以由旧代码解析：旧的二进制文件在解析时会简单地忽略新字段。（具体原因见 [未知字段](https://github.com/halfrost/Halfrost-Field/blob/master/contents/Protocol/Protocol-buffers-encode.md#9-未知字段) 这一章节）
+3. 只要字段号在更新的消息类型中不再使用，字段可以被删除。您可能需要重命名该字段，可能会添加前缀“OBSOLETE_”，或者标记成保留字段号 `reserved`，以便将来的 `.proto` 用户不会意外重复使用该号码。
+4. int32，uint32，int64，uint64 和 bool 全都兼容。这意味着您可以将字段从这些类型之一更改为另一个字段而不破坏向前或向后兼容性。如果一个数字从不适合相应类型的线路中解析出来，则会得到与在 C++ 中将该数字转换为该类型相同的效果（例如，如果将 64 位数字读为 int32，它将被截断为 32 位）。
+5. sint32 和 sint64 相互兼容，但与其他整数类型不兼容。
+6. 只要字节是有效的UTF-8，string 和 bytes 是兼容的。
+7. 嵌入式 message 与 bytes 兼容，如果 bytes 包含 message 的 encoded version。
+8. fixed32 与 sfixed32 兼容，而 fixed64 与 sfixed64 兼容。
+9. enum 就数组而言，是可以与 int32，uint32，int64 和 uint64 兼容（请注意，如果它们不适合，值将被截断）。但是请注意，当消息反序列化时，客户端代码可能会以不同的方式对待它们：例如，未识别的 proto3 枚举类型将保留在消息中，但消息反序列化时如何表示是与语言相关的。（这点和语言相关，上面提到过了）Int 域始终只保留它们的值。
+10. 将单个**值**更改为新的成员是安全和二进制兼容的。如果您确定一次没有代码设置多个**字段**，则将多个字段移至新的字段可能是安全的。将任何**字段**移到现有字段中都是不安全的。（注意字段和值的区别，字段是 field，值是 value）
+
+### 9.Map 类型
+
+`repeated` 类型可以表示数组， Map 类型则可以用来表示字典
+
+`map<key_type, value_type> map_field = N;`
+
+`key_type` 可以是任何 int 或者 string 类型(任何的标量类型，具体可以见上面标量类型对应表格，但是要除去 float、double 和 bytes)
+
+**枚举值也不能作为 key**。
+
+`key_type` 可以是除去 map 以外的任何类型。
+
+需要特别注意的是 ：
+
+- map 是不能用 repeated 修饰的。
+- 线性数组和 map 迭代顺序的是不确定的，所以你不能依靠你的 map 是在一个特定的顺序。
+- 为 `.proto` 生成文本格式时，map 按 key 排序。数字的 key 按数字排序。
+- 从数组中解析或合并时，如果有重复的 key，则使用所看到的最后一个 key（覆盖原则）。从文本格式解析映射时，如果有重复的 key，解析可能会失败。
+
+map 类型的数组可以使用 message 来实现
+
+```protobuf
+message MapFieldEntry {
+	key_type key = 1;
+	value_type value = 2;
+}
+repeated MapFieldEntry map_field = N;
+```
+
+
+
+### 10.JSON Mapping
+
+Proto3 支持 JSON 中的规范编码，使系统之间共享数据变得更加容易。编码在下表中按类型逐个描述。
+
+如果 JSON 编码数据中缺少值或其值为空，则在解析为 protocol buffer 时，它将被解释为适当的默认值。如果一个字段在协议缓冲区中具有默认值，默认情况下它将在 JSON 编码数据中省略以节省空间。具体 Mapping 的实现可以提供选项决定是否在 JSON 编码的输出中发送具有默认值的字段。
+
+![img](RPC%E5%92%8CProtobuf.assets/84_4.png)
+
+### 11.proto3 定义 RPC Serivces
+
+如果要使用 RPC（远程过程调用）系统的消息类型，可以在 `.proto` 文件中定义 RPC 服务接口，protocol buffer 编译器将使用所选语言生成服务接口代码和 stubs。所以，例如，如果你定义一个 RPC 服务，入参是 SearchRequest 返回值是 SearchResponse，你可以在你的 `.proto` 文件中定义它，如下所示：
+
+```protobuf
+service SearchService {
+  rpc Search (SearchRequest) returns (SearchResponse);
+}
+```
+
+与 protocol buffer 一起使用的最直接的 RPC 系统是 gRPC：在谷歌开发的语言和平台中立的开源 RPC 系统。gRPC 在 protocol buffer 中工作得非常好，并且允许你通过使用特殊的 protocol buffer 编译插件，直接从 `.proto` 文件中生成 RPC 相关的代码。
+
+
+
