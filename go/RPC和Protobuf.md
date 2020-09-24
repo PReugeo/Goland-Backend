@@ -194,6 +194,8 @@ fmt.Println(reply)
 
 
 
+
+
 # Protobuf
 
 Protocol buffers 是一种语言中立，平台无关，可扩展的序列化数据的格式，可用于通信协议，数据存储等。其在序列化数据方面，相对于 XML 其更加小巧，更加快速，更加简单。甚至可以在无需部署程序的情况下更新数据结构。
@@ -202,7 +204,7 @@ Protocol buffers 是一种语言中立，平台无关，可扩展的序列化数
 
 
 
-## 使用
+## 1. 使用
 
 ```protobuf
 syntax = "proto3";
@@ -406,6 +408,290 @@ service SearchService {
 ```
 
 与 protocol buffer 一起使用的最直接的 RPC 系统是 gRPC：在谷歌开发的语言和平台中立的开源 RPC 系统。gRPC 在 protocol buffer 中工作得非常好，并且允许你通过使用特殊的 protocol buffer 编译插件，直接从 `.proto` 文件中生成 RPC 相关的代码。
+
+
+
+## 2. protoc-go 
+
+### 1. 普通使用
+
+首先建立一个 `hello.proto` 文件
+
+```protobuf
+syntax = "proto3";
+
+package main;
+option go_package = "main";
+
+message String {
+  string value = 1;
+}
+
+service HelloService {
+  rpc Hello (String) returns (String);
+}
+```
+
+可以通过下列命令生成相应的 Go 代码
+
+```bash
+protoc --go_out=. hello.proto
+```
+
+该语句意思为，使用 prtoc-gen-go 插件生成代码到当前目录。
+
+### 2.使用 gRPC 生成
+
+使用 `protoc --go_out=plugins=grpc:. hello.proto` 可以使用 protoc-gen-go 中自带的 grpc 插件生成 RPC 代码，该语句才会生成 proto 文件中 service 部分。
+
+
+
+### 3.定制代码生成插件
+
+Protobuf 的 protoc 编译器是通过插件机制实现对不同语言的支持。比如 protoc 命令出现`--xxx_out`格式的参数，那么 protoc 将首先查询是否有内置的 xxx 插件，如果没有内置的 xxx 插件那么将继续查询当前系统中是否存在protoc-gen-xxx 命名的可执行程序，最终通过查询到的插件生成代码。对于 Go 语言的 protoc-gen-go 插件来说，里面又实现了一层静态插件系统。比如 protoc-gen-go 内置了一个 gRPC 插件，用户可以通过`--go_out=plugins=grpc`参数来生成 gRPC 相关代码，否则只会针对 message 生成相关代码。
+
+参考gRPC插件的代码，可以发现 generator.RegisterPlugin 函数可以用来注册插件。插件是一个 generator.Plugin 接口：
+
+```go
+// A Plugin provides functionality to add to the output during
+// Go code generation, such as to produce RPC stubs.
+type Plugin interface {
+    // 插件名.
+    Name() string
+    // 通过 g 参数对插件进行初始化， g 参数包含 proto 文件的所有信息
+    Init(g *Generator)
+    // Generate 生成代码文件不包含 import 文件
+    Generate(file *FileDescriptor)
+    // GenerateImports 生成导入包代码
+    GenerateImports(file *FileDescriptor)
+}
+```
+
+因此我们可以根据这个接口，设计一个 netrpcPlugin 插件，用于为标准库 RPC 框架生成代码：
+
+```go
+type netrpcPlugin struct{ *generator.Generator }
+
+func (p *netrpcPlugin) Name() string {
+	return "netrpc"
+}
+
+func (p *netrpcPlugin) Init(g *generator.Generator) {
+	p.Generator = g
+}
+
+func (p *netrpcPlugin) GenerateImports(file *generator.FileDescriptor) {
+	if len(file.Service) > 0 {
+		p.genImportCode(file)
+	}
+}
+
+func (p *netrpcPlugin) Generate(file *generator.FileDescriptor) {
+	for _, svc := range file.Service {
+		p.genServiceCode(svc)
+	}
+}
+func init() {
+	generator.RegisterPlugin(new(netrpcPlugin))
+}
+```
+
+需要使用 `init` 来注册该插件，因为Go语言的包只能静态导入，我们无法向已经安装的protoc-gen-go添加我们新编写的插件。我们将重新克隆protoc-gen-go对应的main函数：
+
+```go
+package main
+
+import (
+	"io/ioutil"
+	"os"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/protoc-gen-go/generator"
+)
+
+func main() {
+	// Begin by allocating a generator. The request and response structures are stored there
+	// so we can do error handling easily - the response structure contains the field to
+	// report failure.
+	g := generator.New()
+
+	data, err := ioutil.ReadAll(os.Stdin)
+	if err != nil {
+		g.Error(err, "reading input")
+	}
+
+	if err := proto.Unmarshal(data, g.Request); err != nil {
+		g.Error(err, "parsing input proto")
+	}
+
+	if len(g.Request.FileToGenerate) == 0 {
+		g.Fail("no files to generate")
+	}
+
+	g.CommandLineParameters(g.Request.GetParameter())
+
+	// Create a wrapped version of the Descriptors and EnumDescriptors that
+	// point to the file that defines them.
+	g.WrapTypes()
+
+	g.SetPackageNames()
+	g.BuildTypeNameMap()
+
+	g.GenerateAllFiles()
+
+	// Send back the results.
+	data, err = proto.Marshal(g.Response)
+	if err != nil {
+		g.Error(err, "failed to marshal output proto")
+	}
+	_, err = os.Stdout.Write(data)
+	if err != nil {
+		g.Error(err, "failed to write output proto")
+	}
+}
+```
+
+接下来使用编译时，为了避免 `protoc-gen-go` 失效，我们将其命名为 `protoc-gen-go-netrpc` 然后将其编译，放入 GOPATH/bin 目录下，然后使用以下命令进行重新编译
+
+```go
+protoc --go-netrpc_out=plugins=netrpc:. hello.proto
+```
+
+其中`--go-netrpc_out`参数告知protoc编译器加载名为protoc-gen-go-netrpc的插件，插件中的`plugins=netrpc`指示启用内部唯一的名为netrpc的netrpcPlugin插件。在新生成的hello.pb.go文件中将包含增加的注释代码。
+
+至此，手工定制的Protobuf代码生成插件终于可以工作了。
+
+**完整代码**
+
+首先需要生成 `import` 包
+
+```go
+func (p *netrpcPlugin) genImportCode(file *generator.FileDescriptor) {
+	p.P(`import "net/rpc"`)
+}
+```
+
+然后要在自定义的 genServiceCode 方法中为每个服务生成相关的代码。分析可以发现每个服务最重要的是服务的名字，然后每个服务有一组方法。而对于服务定义的方法，最重要的是方法的名字，还有输入参数和输出参数类型的名字。
+
+为此我们定义了一个ServiceSpec类型，用于描述服务的元信息：
+
+```go
+type ServiceSpec struct {
+    ServiceName string
+    MethodList  []ServiceMethodSpec
+}
+
+type ServiceMethodSpec struct {
+    MethodName     string
+    InputTypeName  string
+    OutputTypeName string
+}
+```
+
+新建一个方法用于解析每个服务的 ServiceSpec 原信息
+
+```go
+func (p *netrpcPlugin) buildServiceSpec(svc *descriptor.ServiceDescriptorProto) *ServiceSpec {
+	spec := &ServiceSpec{
+		ServiceName: generator.CamelCase(svc.GetName()),
+	}
+
+	for _, m := range svc.Method {
+		spec.MethodList = append(spec.MethodList, ServiceMethodSpec{
+			MethodName: generator.CamelCase(m.GetName()),
+			InputTypeName: p.TypeName(p.ObjectNamed(m.GetInputType())),
+			OutputTypeName: p.TypeName(p.ObjectNamed(m.GetOutputType())),
+		})
+	}
+	return spec
+}
+```
+
+输入参数是 `svc *descriptor.ServiceDescriptorProto` 类型，其完整的描述了一个服务的所有信息，然后就可以通过 `genServiceCode` 来生成服务代码
+
+```go
+func (p *netrpcPlugin) genServiceCode(svc *descriptor.ServiceDescriptorProto) {
+	spec := p.buildServiceSpec(svc)
+
+	var buf bytes.Buffer
+	t := template.Must(template.New("").Parse(tmplService))
+	err := t.Execute(&buf, spec)
+	if err != nil {
+		log.Fatal(err)
+	}
+	p.P(buf.String())
+}
+```
+
+这里使用 Go 的模板来生成服务代码，通过期望的代码来生成模板
+
+```go
+type HelloServiceInterface interface {
+    Hello(in String, out *String) error
+}
+
+func RegisterHelloService(srv *rpc.Server, x HelloService) error {
+    if err := srv.RegisterName("HelloService", x); err != nil {
+        return err
+    }
+    return nil
+}
+
+type HelloServiceClient struct {
+    *rpc.Client
+}
+
+var _ HelloServiceInterface = (*HelloServiceClient)(nil)
+
+func DialHelloService(network, address string) (*HelloServiceClient, error) {
+    c, err := rpc.Dial(network, address)
+    if err != nil {
+        return nil, err
+    }
+    return &HelloServiceClient{Client: c}, nil
+}
+
+func (p *HelloServiceClient) Hello(in String, out *String) error {
+    return p.Client.Call("HelloService.Hello", in, out)
+}
+```
+
+其中 Hello 之类的为名字，最终使用的模板为
+
+```go
+const tmplService = `
+{{$root := .}}
+type {{.ServiceName}}Interface interface {
+	{{- range $_, $m := .MethodList}}
+		{{$m.MethodName}}(in *{{$m.InputTypeName}}, out *{{$m.OutputTypeName}}) error
+	{{- end}}
+}
+func Register{{.ServiceName}}(srv *rpc.Server, x {{.ServiceName}}Interface) error {
+	if err := srv.RegisterName("{{.ServiceName}}", x); err != nil {
+		return err
+	}
+	return nil
+}
+type {{.ServiceName}}Client struct {
+	*rpc.Client
+}
+var _ {{.ServiceName}}Interface = (*{{.ServiceName}}Client)(nil)
+func Dial{{.ServiceName}}(network, address string) (*{{.ServiceName}}Client, error) {
+	c, err := rpc.Dial(network, address)
+	if err != nil {
+		return nil, err
+	}
+	return &{{.ServiceName}}Client{Client: c}, nil
+}
+{{range $_, $m := .MethodList}}
+func (p *{{$root.ServiceName}}Client) {{$m.MethodName}}(in *{{$m.InputTypeName}}, out *{{$m.OutputTypeName}}) error {
+	return p.Client.Call("{{$root.ServiceName}}.{{$m.MethodName}}", in, out)
+}
+{{end}}
+`
+```
+
+
 
 
 
