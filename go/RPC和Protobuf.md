@@ -693,5 +693,62 @@ func (p *{{$root.ServiceName}}Client) {{$m.MethodName}}(in *{{$m.InputTypeName}}
 
 
 
+# RPC 源码分析
+
+## 客户端 RPC 实现原理
+
+
+
+Go 语言客户端 RPC 调用使用 `client.Call` 进行同步阻塞调用，其实现如下
+
+```go
+func (client *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
+	call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
+	return call.Error
+}
+```
+
+其内部通过调用 `client.Go` 函数来进行异步调用，然后等待 `Done` 管道返回调用结果，其内部实现为
+
+```go
+func (client *Client) Go(serviceMethod string, args interface{}, reply interface{}, done chan *Call) *Call {
+	call := new(Call)
+	call.ServiceMethod = serviceMethod
+	call.Args = args
+	call.Reply = reply
+	if done == nil {
+		done = make(chan *Call, 10) // buffered.
+	} else {
+		if cap(done) == 0 {
+			log.Panic("rpc: done channel is unbuffered")
+		}
+	}
+	call.Done = done
+	client.send(call)
+	return call
+}
+```
+
+首先初始化一个 call 变量，然后通过 `client.send` 将 call 的完整参数发送给 RPC 框架，其调用是线程安全的，因此可以多个 Goroutine 同时向同一个 RPC 链接发送调用命令。
+
+当全部调用完成时，`client.send` 会调用 `client.done` 来通知调用完成：
+
+```go
+func (call *Call) done() {
+	select {
+	case call.Done <- call:
+		// ok
+	default:
+		// We don't want to block here. It is the caller's responsibility to make
+		// sure the channel has enough buffer space. See comment in Go().
+		if debugLog {
+			log.Println("rpc: discarding Call reply due to insufficient Done chan capacity")
+		}
+	}
+}
+```
+
+由以上可以看出，`call.Done` 必须初始化时设定一个缓冲量保证多个 RPC 调用可以有效返回。
+
 
 

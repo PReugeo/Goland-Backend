@@ -1179,4 +1179,171 @@ SYNC 命令需要生成、传送、载入 RDB 文件，部分重同步只需要�
     1. 检测套接字是否正常
     2. 检测主服务器是否能正常处理命令请求
 
-4. 身份验证
+4. 身份验证：取决于从服务器的 `masterauth` 选项和主服务器的 `requirepass` 选项
+
+    需要身份验证时，从服务器发送一条值为 masterauth 的值来进行身份验证
+
+5. 发送端口信息：从服务器向主服务器发送自己的监听端口号
+
+6. 同步：此时主从服务器都是对方的客户端
+
+7. 命令传播
+
+### 心跳检测
+
+命令传播状态，从服务器会以每秒一次的频率，向主服务器发送命令
+
+```redis
+REPLCONF ACK <replication_offset>
+```
+
+其中 replication_offset 是复制偏移量，该命令对主从服务器有三个作用
+
+1. 检测主从服务器的网络连接状态
+
+2. 辅助实现 min-slaves 选项
+
+    防止主服务器在不安全的情况下执行写命令。
+
+3. 检测命令丢失
+
+
+
+## Sentinel（哨兵）
+
+哨兵是 Redis 高可用性的解决方案：由一个或多个 Sentinel 实例组成的 Sentinel 系统可以监视任意多个主服务器以及这些主服务器属下的所有从服务器，当被监视的主服务器进入下线状态时，自动将下线主服务器的某个从服务器升级为新的主服务器。
+
+![img](Redis.assets/907596-20180507190932477-2053887895.png)
+
+![img](Redis.assets/907596-20180507190947053-1114526030.png)
+
+
+
+![img](Redis.assets/907596-20180507191002090-81723534.png)
+
+当服务器 Server1 重新上线时，会被降级为 Server2 的从服务器。
+
+### 初始化 Sentinel
+
+启动命令
+
+```shell
+redis-sentinel /path/to/your/sentinel.conf
+#或者
+redis-server /path/to/your/sentinel.conf --sentinel
+```
+
+启动时要由以下步骤：
+
+1. 初始化服务器
+2. 将普通 Redis 服务器使用的代码替换为 Sentinel 专用代码
+3. 初始化 Sentinel 状态
+4. 根据配置文件，初始化 Sentinel 的监视主服务器列表
+5. 创建连向主服务器的网络连接
+
+
+
+**初始化服务器**
+
+Sentinel 是一个运行在特殊模式下的 Redis 服务器，所以启动第一步是初始化一个普通的 Redis 服务器，但是其不需要数据库，所以初始化时不会载入 RDB 和 AOF 文件。
+
+**替换代码**
+
+普通 Redis 服务器使用的是 `redis.c/redisCommandTable` 作为服务器的命令表。
+
+Sentinel 使用 `sentinel.c/sentinelcmds` 作为命令表，并且 INFO 命令使用 `sentinel.c/sentinelInfoCommand` 函数。
+
+**初始化 Sentinel 状态**
+
+服务器会初始化一个 `sentinel.c/sentinelState` 状态，其保存了 Sentinel 状态，服务器一般状态还是使用 `redisServer` 保存
+
+```c
+struct sentinelState {
+    // 当前纪元，用于实现故障转移
+    uint64_t current_epoch;
+    // 保存所有被这个 Sentinel 监视的主服务器
+    // 键为主服务器名字，字典值为一个指向 sentinelRedisInstance 结构的指针
+    dict *masters;
+    // 是否进入 TILT 模式
+    int tilt;
+    // 目前正在执行的脚本的数量
+    int running_scripts;
+    // 进入 TILT 模式的时间
+    mstime_t tilt_start_time;
+    // 最后一次执行时间处理器的时间
+    mstime_t previous_time;
+    // 一个 FIFO 队列，包含了所有需要执行的用户脚本
+    list *scripts_queue;
+} sentinel;
+```
+
+**初始化 Sentinel 的监视主服务器列表 masters**
+
+Sentinel 状态中的 master 字典记录了所有被 Sentinel 监视的主服务器的相关信息，其中：
+
+* 键为主服务器名字
+* 值为一个指向 `sentinelRedisInstance` 结构的指针
+
+每个 `sentinelRedisInstance` 结构代表一个被 Sentinel 监视的实例（主服务器，从服务器，另一个 Sentinel）
+
+```c
+typedef struct sentinelAddr
+{
+    char *ip;
+    int port;
+} sentinelAddr;
+
+
+typedef struct sentinelRedisInstance
+{
+    // 标识值， 记录实例的类型，以及实例的当前状态
+    int flags;
+
+    // 实例的名字
+    // 主服务器的名字由用户在配置文件中配置
+    // 从服务器以及 Sentinel 名字由 Sentinel 自己配置
+    char *name;
+    // 实例的运行 ID
+    char *runid;
+    // 配置纪元，用于实现故障转移
+    uint64_t config_epoch;
+    // 实例地址
+    sentinelAddr *addr;
+    // SENTINEL down-after-milliseconds 选项的值
+    // 实例无响应多少毫秒后才会判断为主观下线
+    mstime_t down_after_period;
+    // SENTINEL monitor <master-name> <IP> <port> <quorum> 选项的 quorum 值
+    // 判断这个实例为客观下线（objectively down）所需要的支持投票数量
+    int quorum;
+    // SENTINEL parallel-syncs <master-name> <number> 选项的值
+    // 执行故障转移操作时，可以同时对新的主服务器进行同步的从服务器数量
+    int parallel_syncs;
+    // SENTINEL failover-timeout <master-name> <ms> 
+    // 刷新故障迁移状态的最大时限
+    mstime_t failover_timeout;
+    // ...
+} sentinelRedisInstance;
+```
+
+**创建连向主服务器的网络连接**
+
+这是初始化 Sentinel 最后一步，建立网络连接后，Sentinel 将成为主服务器的客户端。
+
+一般会创建两条连接
+
+1. 命令连接：用于向主服务器发送命令和接受命令回复
+2. 订阅连接：用于订阅主服务器的 `__sentinel__:hello`  频道
+
+
+
+### 获取和发送信息
+
+**获取主服务器信息**
+
+Sentinel 默认每十秒一次的频率，通过命令连接向被监视的主服务器发送 INFO 命令，通过主服务器返回的 INFO Sentinel 可以得到以下信息
+
+* 主服务器本身的信息：`run_id` 记录的服务器运行 ID ， `role` ：记录服务器角色
+* 主服务器从属服务器的信息，根据这些信息 Sentinel 可以自动发现从服务器无需用户设置
+
+
+

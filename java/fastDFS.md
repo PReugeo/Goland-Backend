@@ -14,13 +14,11 @@ FastDFS 系统有三个角色：跟踪服务器(Tracker Server)、存储服务�
 
 上传过程:
 
-![](/home/eugeo/文档/学习笔记/Java-golang-learning/java/Untitled.assets/856154-20171012121639387-1574147926.png)
+![](Untitled.assets/856154-20171012121639387-1574147926.png)
 
 下载过程与上传过程相似。在downloadfile时客户端可以选择任意tracker  server。tracker发送download请求给某个tracker，必须带上文件名信息，tracke从文件名中解析出文件的group、大小、创建时间等信息，然后为该请求选择一个storage用来服务读请求。
 
 ## 环境搭建
-
-##  
 
 ### 安装libfatscommon
 
@@ -29,8 +27,6 @@ git clone https://github.com/happyfish100/libfastcommon.git --depth 1
 cd libfastcommon/
 ./make.sh && ./make.sh install #编译安装
 ```
-
-##  
 
 ### 安装FastDFS
 
@@ -47,8 +43,6 @@ cp /usr/local/src/fastdfs/conf/http.conf /etc/fdfs/ #供nginx访问使用
 cp /usr/local/src/fastdfs/conf/mime.types /etc/fdfs/ #供nginx访问使用
 ```
 
-##  
-
 ### 安装fastdfs-nginx-module
 
 ```shell
@@ -56,8 +50,6 @@ cd ../ #返回上一级目录
 git clone https://github.com/happyfish100/fastdfs-nginx-module.git --depth 1
 cp /usr/local/src/fastdfs-nginx-module/src/mod_fastdfs.conf /etc/fdfs
 ```
-
-##  
 
 ### 安装nginx
 
@@ -82,8 +74,6 @@ vim /etc/fdfs/tracker.conf
 port=22122  # tracker服务器端口（默认22122,一般不修改）
 base_path=/home/dfs  # 存储日志和数据的根目录
 ```
-
-##  
 
 ### storage配置
 
