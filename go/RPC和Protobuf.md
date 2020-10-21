@@ -693,7 +693,7 @@ func (p *{{$root.ServiceName}}Client) {{$m.MethodName}}(in *{{$m.InputTypeName}}
 
 
 
-# RPC 源码分析
+# RPC 实战
 
 ## 客户端 RPC 实现原理
 
@@ -751,4 +751,379 @@ func (call *Call) done() {
 由以上可以看出，`call.Done` 必须初始化时设定一个缓冲量保证多个 RPC 调用可以有效返回。
 
 
+
+## KVStoreService 实现
+
+server 端实现了一个模拟数据库的 KV map, 和一个 Watch 方法来检测 map 中的值是否改变
+
+```go
+// KVStoreService 模拟数据库
+type KVStoreService struct {
+	m      map[string]string
+	filter map[string]func(key string)
+	mu     sync.Mutex
+}
+
+// NewKVStoreService 初始化 KVStore 模拟数据库
+func NewKVStoreService() *KVStoreService {
+	return &KVStoreService{
+		m:      make(map[string]string),
+		filter: make(map[string]func(key string)),
+	}
+}
+
+// Get 根据 key 获取值
+func (p *KVStoreService) Get(key string, value *string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if v, ok := p.m[key]; ok {
+		*value = v
+		return nil
+	}
+
+	return fmt.Errorf("not found")
+}
+
+// Set 存储 key ,value 值到 map 中
+func (p *KVStoreService) Set(kv [2]string, reply *struct{}) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	key, value := kv[0], kv[1]
+
+	if oldValue := p.m[key]; oldValue != value {
+		for _, fn := range p.filter {
+			fn(key)
+		}
+	}
+	p.m[key] = value
+	return nil
+}
+
+// Watch 输入超时的秒数. 当 key 变化时将 key 作为返回值返回, 如果超过时间依然没有被修改, 则返回超时错误
+func (p *KVStoreService) Watch(timeoutSecond int, keyChanged *string) error {
+	id := fmt.Sprintf("watch-%s-%03d", time.Now(), rand.Int())
+	ch := make(chan string, 10)
+
+	p.mu.Lock()
+	p.filter[id] = func(key string) { ch <- key }
+	p.mu.Unlock()
+
+	select {
+	case <-time.After(time.Duration(timeoutSecond) * time.Second):
+		return fmt.Errorf("timeout")
+	case key := <-ch:
+		*keyChanged = key
+		return nil
+	}
+}
+
+// 反向 RPC 服务器端连接客户端监听的端口来进行服务
+func main() {
+	rpc.Register(&KVStoreService{
+		m:      make(map[string]string),
+		filter: make(map[string]func(key string)),
+	})
+	for {
+		conn, _ := net.Dial("tcp", "localhost:1234")
+		if conn == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		rpc.ServeConn(conn)
+		conn.Close()
+	}
+}
+```
+
+client 端
+
+```go
+// doClientWork 调用 RPC 函数
+func doClientWork(clientChan <-chan *rpc.Client) {
+	// 从管道中获取一个 client 调用后将其关闭
+	client := <-clientChan
+	defer client.Close()
+	go func() {
+		var keyChanged string
+		err := client.Call("KVStoreService.Watch", 30, &keyChanged)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("watch: ", keyChanged)
+	}()
+
+	err := client.Call(
+		"KVStoreService.Set", [2]string{"abc", "abc-value"},
+		new(struct{}),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("hello")
+	time.Sleep(time.Second * 3)
+}
+
+// 反向 RPC 调用, 由客户端监听
+func main() {
+	listener, err := net.Listen("tcp", ":1234")
+	if err != nil {
+		log.Fatal("ListenTCP error:", err)
+	}
+
+	clientChan := make(chan *rpc.Client)
+	go func ()  {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Fatal("Accept error:", err)
+			}
+
+			clientChan <- rpc.NewClient(conn)
+		}	
+	}()
+	doClientWork(clientChan)
+}
+```
+
+
+
+## 携带上下文信息
+
+基于上下文我们可以针对不同客户端提供定制化的RPC服务。我们可以通过为每个 链接提供独立的RPC服务来实现对上下文特性的支持。
+
+首先改造HelloService，里面增加了对应链接的conn成员：
+
+```go
+type HelloService struct {
+
+	conn net.Conn
+
+}
+```
+
+然后为每个链接启动独立的RPC服务：
+
+```go
+func main() {
+
+    listener, err := net.Listen("tcp", ":1234")
+
+    if err != nil {
+
+    	log.Fatal("ListenTCP error:", err)
+
+    }
+
+    for {
+
+        conn, err := listener.Accept()
+
+        if err != nil {
+
+            log.Fatal("Accept error:", err)
+
+        }
+
+        go func() {
+
+            defer conn.Close()
+
+            p := rpc.NewServer()
+
+            p.Register(&HelloService{conn: conn})
+
+            p.ServeConn(conn)
+
+        } ()
+
+    }
+}
+```
+
+接下来 Hello 方法就可以根据不同的上下文信息而做出不同的抉择
+
+```go
+func (p *HelloService) Hello(request string, reply *string) error {
+	if !p.isLogin {
+		return fmt.Errorf("please login")
+	}
+	*reply = "hello:" + request + ", from" + p.conn.RemoteAddr().String()
+	return nil
+}
+```
+
+就可以使用 conn 来携带上下文信息.
+
+# gRPC
+
+gRPC 是 Google 公司基于Protobuf 开发的跨语言的开源 RPC 框架。gRPC 基于 HTTP/2 协议设计，可以基于一个 HTTP/2 链接提供多个服务，对于移动设备更加友好。
+
+**gRPC 技术栈**
+
+![image-20201016150209232](RPC和Protobuf.assets/image-20201016150209232.png)
+
+## gRPC 入门
+
+gRPC 使用 `context.Context` 来进行上下文支持。是每个参数调用都可获取上下文信息，客户端在调用时也可以添加 `grpc.CallOption` 来添加额外上下文信息。其 `proto` 文件定义为
+
+```protobuf
+syntax = "proto3";
+
+option go_package=".;main"
+
+message String {
+
+	string value = 1;
+
+}
+
+service HelloService {
+
+	rpc Hello (String) returns (String);
+
+}
+```
+
+ 使用 `protoc --go_out=plugins=grpc:. hello.proto` 可以使用 protoc-gen-go 中自带的 grpc 插件生成 RPC 代码，该语句才会生成 proto 文件中 service 部分。
+
+其会生成以下接口代码：
+
+```go
+type HelloServiceServer interface {
+
+	Hello(context.Context, *String) (*String, error)
+
+}
+
+type HelloServiceClient interface {
+
+	Hello(context.Context, *String, ...grpc.CallOption) (*String, error)
+
+}
+```
+
+因此可以去编写服务端代码为：
+
+```go
+type HelloServiceImpl struct{}
+
+func (p *HelloServiceImpl) Hello(ctx context.Context, args *String) (*String, error) {
+
+	reply := &String{Value: "hello:" + args.GetValue()}
+
+	return reply, nil
+
+}
+
+func main() {
+
+    grpcServer := grpc.NewServer()
+
+    RegisterHelloServiceServer(grpcServer, new(HelloServiceImpl))
+
+    lis, err := net.Listen("tcp", ":1234")
+
+    if err != nil {
+
+    	log.Fatal(err)
+
+    }
+
+    grpcServer.Serve(lis)
+
+}
+```
+
+其启动过程和 `rpc` 启动过程相像，使用 `grpc` 代码生成的 `RegisterHelloServiceServer` 来注册服务，然后调用 net 包去监听端口最后调用 `grpcServer.Serve(lis)` 来进行服务。然后可以通过客户端来进行连接
+
+```go
+func main() {
+
+	conn, err := grpc.Dial("localhost:1234", grpc.WithInsecure())
+
+    if err != nil {
+
+    	log.Fatal(err)
+
+    }
+
+    defer conn.Close()
+
+    client := NewHelloServiceClient(conn)
+
+    reply, err := client.Hello(context.Background(), &String{Value: "hello"})
+
+    if err != nil {
+
+    	log.Fatal(err)
+
+    }
+
+    fmt.Println(reply.GetValue())
+
+}
+```
+
+gRPC 调用与标准调用有一点区别，就是 gRPC 不支持异步调用。不过可以在多个 Goroutine 之间安全共享 HTTP/2 的连接，可以通过另一个 Goroutine 阻塞调用的方式来模拟异步调用。
+
+
+
+## gRPC 流
+
+RPC 是远程调用，所以每次调用的函数参数和数值不能太大，否则会影响调用的时间，因此传统 RPC 调用不适合大文件上传和下载的场景同时传统RPC 模式也不适用于对时间不确定的订阅和发布模式。为此， gRPC 框架针对服务器端和客户端分别提供了流特性。
+
+在 `proto` 文件中加入 `stream` 关键字表示开启流
+
+```protobuf
+syntax = "proto3";
+
+option go_package = ".;stream";
+
+message String {
+  string value = 1;
+}
+
+service HelloService {
+  rpc Hello (String) returns (String);
+  rpc Channel (stream String) returns (stream String);
+}
+```
+
+gRPC 流中有 `send` 和 `Recv` 方法来负责流的接受和发送
+
+```go
+func (x *helloServiceChannelServer) Send(m *String) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *helloServiceChannelServer) Recv() (*String, error) {
+	m := new(String)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+```
+
+## gRPC 证书认证
+
+gRPC 建立在 HTTP/2 协议上，对 TLS 有很好的支持，在前面的 gRPC 代码中的服务都没有提供证书支持，因此客户端在链接服务器时，使用了 `grpc.WithInsecure()` 选项跳过了对服务器证书的验证。没有启用证书的 gRPC 服务和客户端通信时是使用明文通讯，信息传输不安全，为了保障 gRPC 通信不被第三方监听，可以对服务器启动 TLS 加密特性。
+
+可以用以下命令为服务器和客户端分别生成私钥和证书
+
+```shell
+openssl genrsa -out server.key 2048
+openssl req -new -x509 -days 3650 \
+ 	-subj "/C=GB/L=China/O=grpc-server/CN=server.grpc.io" \
+ 	-key server.key -out server.crt
+
+openssl genrsa -out client.key 2048
+openssl req -new -x509 -days 3650 \
+	-subj "/C=GB/L=China/O=gprc-client/CN=client.grpc.io" \
+	-key client.key -out client.crt
+```
+
+以上命令会生成 `server.key`, `server.crt` , `client.key`, `client.crt` 四个文件，其中以 `.key` 结尾的为私钥文件。以 `.crt` 为后缀的为证书文件，也可以理解为公钥文件。在 subj 参数中的 `/CN=server.grpc.io` 表示服务器的名字为 `server.grpc.io` ，在验证服务器证书时需要用到该信息。
 

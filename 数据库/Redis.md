@@ -1345,5 +1345,85 @@ Sentinel 默认每十秒一次的频率，通过命令连接向被监视的主�
 * 主服务器本身的信息：`run_id` 记录的服务器运行 ID ， `role` ：记录服务器角色
 * 主服务器从属服务器的信息，根据这些信息 Sentinel 可以自动发现从服务器无需用户设置
 
+**获取从服务器信息**
+
+当 Sentinel 发现主服务器有新的从服务器出现时，除了会为新的从服务器创建相应的实例结构外，还没创建连接从服务器的命令连接和订阅连接。
+
+**向主服务器和从服务器发送信息**
+
+默认情况下，Sentinel 每两秒一次的频率，通过命令连接向被监视的主从服务器发送
+
+`PUBLISH __sentinel__:hello "<s_ip>, <s_port>, <s_runid>, <s_epoch>, <m_name>, <m_ip>, <m_port>, <m_epoch>"` 其中 s 开头为 sentinel 自身信息，m 则为主从服务器的信息
+
+**接收主从服务器的频道信息**
+
+Sentinel 在与主从服务器建立订阅连接后会向服务器发送命令 `SUBSCRIBE __sentinel__:hello` 对该频道的订阅会持续到连接断开。
+
+![image-20201017161922996](Redis.assets/image-20201017161922996.png)
+
+**更新 Sentinel 字典**
+
+**Sentinel** 创建的 sentinels 字典保存了监视该主服务器的其他 **Sentinel** 的信息，在一个 **Sentinel** 接收到其他 Sentinel 发送的信息时，他会检查自己的 masters 字典查找主服务器实例结构，然后根据从接收到的信息中提取出的 Sentinel 参数查找主服务器中的 sentinels 字典是否存在该 Sentinel，如果存在则更新，不存在就插入。
+
+由于 Sentinel 可以自己发现其他的 Sentinel ，所以用户使用时不需要提供各个 Sentinel 地址信息。
+
+**连接其他 Sentinel**
+
+当 Sentinel 通过频道发现其他 Sentinel 时，不仅会更新 sentinels 字典还会创建一条命令连接，可以通过其向其他 Sentinel 发送信息。
+
+> Sentinel 之间不会创建订阅连接
+
+### 检测下线状态
+
+#### 检测主观下线
+
+默认情况，Sentinel 会每秒一次频率向所有它创建了**命令连接**的实例发送 PING 命令，并通过实例返回的 PONG 来检查实例是否在线。
+
+> 用户设置的 `down-after-milliseconds` 选项用于判断下线状态
+>
+> 多个 Sentinel 的主观下线时长可能不同
+
+#### 检查客观下线
+
+Sentinel 判断为主观下线后，它同时还会向监视这台服务器的其他 Sentinel 进行询问，当它接受到足够数量的已下线判断后，就会判断为客观下线，并对主服务器执行故障转移。其会对其他 Sentinel 发送命令 `is-master-down-by-addr` 
+
+![image-20201017201206084](Redis.assets/image-20201017201206084.png)
+
+Sentinel 接收到后统计其他 Sentinel 同意主观下线的数量，超过配置的数量后，Sentinel 会将主服务器实例 flags 属性的 SRI_O_DOWN 标识打开，标识已进入客观下线。
+
+> 如果数量超过  quorum 值则判断为客观下线
+
+### 选举领头 Sentinel 
+
+当主服务器被判断为客观下线后，监视其的 Sentinel 会进行协商选举出一个领头 Sentinel 来进行故障转移操作。选举算法为 Raft 算法，选举过程为
+
+* 如果有三台 Sentinel 监测到主服务器的客观下线状态，此时其他 Sentinel 会再次向其他 Sentinel 发送 `SENTINEL is-master-down-by-addr` 命令，此次命令会带有自己的 `runid`
+* 如果接受到该指令的 Sentinel 未设置自己的局部领头 Sentinel，就会将发送该指令的 Sentinel 设置为自己的局部领头 Sentinel 并回复
+* 发送指令的 Sentinel 根据这一回复，统计出有多少个 Sentinel 将自己设置为局部领头 Sentinel，并成为领头 Sentinel
+
+然后领头 Sentinel 对主服务器进行故障转移操作
+
+### 故障转移
+
+故障转移主要有以下操作
+
+1. 让已下线的主服务器中的从服务器中选取一个将其推选为主服务器
+2. 已下线服务器属下所有从服务器复制为新的主服务器
+3. 将已下线的服务器设置为新主服务器的从服务器
+
+#### 选取主服务器
+
+选取一台从服务器执行 `SLAVEOF no one` 命令，将其转为主服务器。
+
+领头 Sentinel 会将已下线的主服务器的所有从服务器保存到一个列表中，并根据以下规则过滤
+
+* 已下线或断线的从服务器
+* 五秒内未回复领头 Sentinel INFO 命令的
+* 与已下线主服务器连接断开超过 `down-after-milliseconds * 10` 毫秒的从服务器
+
+之后依次按照优先级、复制偏移量、ID 来进行排序选出最优先，最大，最小的从服务器。
+
+
+
 
 
