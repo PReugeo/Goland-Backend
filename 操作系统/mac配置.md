@@ -106,3 +106,9 @@ eval "$(docker-machine env default)"
 
 设置 docker 初始运行环境.
 
+## 4k 显示
+
+```shell
+sh -c "$(curl -fsSL https://html.sqlsec.com/hidpi.sh)"
+```
+

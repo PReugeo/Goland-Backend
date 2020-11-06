@@ -1127,3 +1127,329 @@ openssl req -new -x509 -days 3650 \
 
 以上命令会生成 `server.key`, `server.crt` , `client.key`, `client.crt` 四个文件，其中以 `.key` 结尾的为私钥文件。以 `.crt` 为后缀的为证书文件，也可以理解为公钥文件。在 subj 参数中的 `/CN=server.grpc.io` 表示服务器的名字为 `server.grpc.io` ，在验证服务器证书时需要用到该信息。
 
+一般中还会加入 CA 证书来保证证书在传递过程中不被篡改，通过根证书，一般操作为
+
+```makefile
+default:
+	# ca
+	openssl genrsa -out ca.key 2048
+	openssl req -new -x509 -days 3650 \
+		-subj "/C=GB/L=China/O=gobook/CN=github.com" \
+		-key ca.key -out ca.crt
+
+	# server
+	openssl genrsa \
+		-out server.key 2048
+	openssl req -new \
+		-subj "/C=GB/L=China/O=server/CN=server.io" \
+		-key server.key \
+		-out server.csr
+	openssl x509 -req -sha256 \
+		-CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+		-in server.csr \
+		-out server.crt
+
+	# client
+	openssl genrsa \
+		-out client.key 2048
+	openssl req -new \
+		-subj "/C=GB/L=China/O=client/CN=client.io" \
+		-key client.key \
+		-out client.csr
+	openssl x509 -req -sha256 \
+		-CA ca.crt -CAkey ca.key -CAcreateserial -days 3650 \
+		-in client.csr \
+		-out client.crt
+
+clean:
+	-rm *.key *.crt *.csr *.srl
+```
+
+而后客户端和服务端可以验证证书
+
+```go
+func startServer() {
+	certificate, err := tls.LoadX509KeyPair(server_crt, server_key)
+	if err != nil {
+		log.Panicf("could not load server key pair: %v", err)
+	}
+
+	certPool := x509.NewCertPool()
+	ca, err := ioutil.ReadFile(ca)
+	if err != nil {
+		log.Panicf("could not read ca certificate: %v", err)
+	}
+	// 从 CA 证书中加入客户端验证
+	if ok := certPool.AppendCertsFromPEM(ca); !ok {
+		log.Panicf("faided to append client certs")
+	}
+
+	// 创建 TLS 证书
+	creds := credentials.NewTLS(&tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		Certificates: []tls.Certificate{certificate},
+		ClientCAs: certPool,
+	})
+
+	// 创建 grpc 服务
+	server := grpc.NewServer(grpc.Creds(creds))
+	RegisterGreeterServer(server, new(myGrpcServer))
+
+	lis, err := net.Listen("tcp", port)
+	if err != nil {
+		log.Fatalf("could not listen port: %v, err: %v", port, err)
+	}
+
+	if err := server.Serve(lis); err != nil {
+		log.Fatalf("grpc server error: %v", err)
+	}
+}
+
+func doClientWork() {
+	certificate, err := tls.LoadX509KeyPair(client_crt, client_key)
+	if err != nil {
+		log.Fatalf("could not load client key pair: %v", err)
+	}
+
+	certPool := x509.NewCertPool()
+	ca, err := ioutil.ReadFile(ca)
+	if err != nil {
+		log.Panicf("could not read ca certificate: %v", err)
+	}
+	// 从 CA 证书中加入客户端验证
+	if ok := certPool.AppendCertsFromPEM(ca); !ok {
+		log.Panicf("faided to append client certs")
+	}
+
+	// 创建 TLS 证书
+	creds := credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: false,
+		ServerName: tlsServerName,
+		Certificates: []tls.Certificate{certificate},
+		RootCAs: certPool,
+	})
+
+	conn, err := grpc.Dial("localhost"+port, grpc.WithTransportCredentials(creds))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	c := NewGreeterClient(conn)
+	r, err := c.SayHello(context.Background(), &HelloRequest{Name: "gopher"})
+	if err != nil {
+		log.Fatal("could not greet: ", err)
+	}
+
+	log.Printf("doClientWork: %s", r.Message)
+}
+
+```
+
+## Token 认证
+
+gRPC 为每个 gRPC 方法调用提供了认证支持，这样基于用户 Token 对不同的方法访问进行权限管理。要实现对每个 gRPC 方法进行认证，需要实现 `grpc.PerRPCCredentials` 接口：
+
+```go
+type PerRPCCredentials interface {
+    GetRequestMetadata(ctx contex.Contex, uri ...string) (map[string]string, error)
+    RequireTransportSecurity() bool
+}
+```
+
+在 GetRequestMetadata 方法中返回认证需要的必要信息。 RequireTransportSecurity 方法表示是否要求底层使用安全链接。在真实的环境中建议必须要求底层启用安全的链接，否则认证信息有泄露和被篡改的风险。
+
+我们可以创建一个Authentication类型，用于实现用户名和密码的认证：
+
+```go
+type Authentication struct {
+	Login string
+	Password string
+}
+
+func (a *Authentication) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	return map[string]string{"login": a.Login, "password": a.Password}, nil
+}
+
+func (a *Authentication) RequireTransportSecurity() bool {
+	return false
+}
+```
+
+然后在每次请求gRPC服务时就可以将Token信息作为参数选项传人:
+
+```go
+func doClientWork() {
+	auth := Authentication{
+		Login:    "gopher",
+		Password: "password",
+	}
+
+	conn, err := grpc.Dial("localhost"+port, grpc.WithInsecure(), grpc.WithPerRPCCredentials(&auth))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	c := NewGreeterClient(conn)
+	r, err := c.SayHello(context.Background(), &HelloRequest{Name: "gopher"})
+	if err != nil {
+		log.Fatal("could not greet: ", err)
+	}
+	log.Println("doClientWork: ", r.Message)
+}
+
+```
+
+通过grpc.WithPerRPCCredentials函数将Authentication对象转为grpc.Dial参数。因 为这里没有启用安全链接，需要传人grpc.WithInsecure()表示忽略证书认证。
+
+然后在gRPC服务端的每个方法中通过Authentication类型的Auth方法进行身份认 证：
+
+```go
+func (a *Authentication) Auth(ctx context.Context) error {
+
+    md, ok := metadata.FromIncomingContext(ctx)
+
+    if !ok {
+
+    	return fmt.Errorf("missing credentials")
+
+    }
+
+    var appid string
+
+    var appkey string
+
+    if val, ok := md["login"]; ok { appid = val[0] }
+
+    if val, ok := md["password"]; ok { appkey = val[0] }
+
+    if appid != a.Login || appkey != a.Password {
+
+        return grpc.Errorf(codes.Unauthenticated, "invalid token")
+
+    }
+    return nil
+}
+```
+
+## 截取器
+
+gRPC中的 grpc.UnaryInterceptor 和 grpc.StreamInterceptor 分别对普通方法和流方法提供了截取器的支持。
+
+要实现普通方法的截取器，需要为grpc.UnaryInterceptor的参数实现一个函数：
+
+```go
+func filter(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,handler grpc.UnaryHandler) (resp interface{}, err error) {
+    log.Println("fileter:", info)
+    return handler(ctx, req)
+}
+```
+
+函数的ctx和req参数就是每个普通的RPC方法的前两个参数。第三个info参数表示 当前是对应的那个gRPC方法，第四个handler参数对应当前的gRPC方法函数。上 面的函数中首先是日志输出info参数，然后调用handler对应的gRPC方法函数。
+
+如果截取器函数返回了错误，那么该次gRPC方法调用将被视作失败处理。因此， 我们可以在截取器中对输入的参数做一些简单的验证工作。同样，也可以对handler 返回的结果做一些验证工作。截取器也非常适合前面对Token认证工作。
+
+不过gRPC框架中只能为每个服务设置一个截取器，因此所有的截取工作只能在一 个函数中完成。开源的`grpc-ecosystem`项目中的`go-grpc-middleware`包已经基于 gRPC对截取器实现了链式截取器的支持。
+
+## gRPC 和 Protobuf 扩展
+
+### 验证器
+
+在开源社区中，github.com/mwitkow/go-proto-validators 已经基于Protobuf的扩展 特性实现了功能较为强大的验证器功能。要使用该验证器首先需要下载其提供的代码生成插件：
+
+```shell
+go get github.com/mwitkow/go-proto-validators/protoc-gen-govalidators
+```
+
+然后基于该包写 `proto` 文件
+
+```protobuf
+syntax = "proto3";
+
+package main;
+
+option go_package=".;main";
+
+import "github.com/mwitkow/go-proto-validators@v0.3.2/validator.proto";
+
+message Message {
+  string important_string = 1 [(validator.field) = {regex:"^[a-z]{2,5}$"}];
+  int32 age = 2 [(validator.field) = {int_gt: 0, int_lt: 100}];
+}
+```
+
+其中 `validator.field` 表示扩展时 `validator` 包中定义的名为 `field` 扩展选项
+
+我们可以使用以下命令生成验证函数代码：
+
+```makefile
+gen:
+	protoc  \
+	  --proto_path=${GOPATH}/pkg/mod \
+	  --proto_path=${GOPATH}/pkg/mod/github.com/gogo/protobuf@v1.3.0/protobuf \
+	  --proto_path=. \
+	  --go_out=. \
+	  --go-grpc_out=. \
+	  --govalidators_out=gogoimport=true:. \
+	  *.proto
+```
+
+其中两个 `--proto_path/-I` 指定 proto 文件去磁盘中哪个地方寻找 proto 扩展文件。
+
+即可生成验证器函数，并结合截取器，可以对每个方法输入参数和返回值进行验证。
+
+### REST 接口
+
+gRPC 一般用于集群内部通信 ，对外暴露服务一般需要提供等价 REST 接口。可以使用开源的 `grpc-gateway` 项目
+
+![image-20201106220321263](RPC和Protobuf.assets/image-20201106220321263.png)
+
+通过在 Protobuf 文件中添加路由相关的元信息，通过自定义代码插件生成路由相关的处理代码，最终将 REST 请求转给更后端的 gRPC 服务器处理。
+
+```protobuf
+syntax = "proto3";
+
+package main;
+option go_package=".;main";
+
+import "google/api/annotations.proto";
+
+message StringMessage {
+  string value = 1;
+}
+
+service RestService {
+  rpc Get(StringMessage) returns(StringMessage) {
+    option (google.api.http) = {
+      get: "/get/{value}"
+    };
+  }
+  rpc Post(StringMessage) returns(StringMessage) {
+    option(google.api.http) = {
+      post: "/post"
+      body: "*"
+    };
+  }
+}
+```
+
+然后通过 proto 将其代码文件生成
+
+```makefile
+protoc \
+    -I=. -I=${GOPATH}/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@v2.0.0/third_party/googleapis  \
+    --go_out=. \
+    --go-grpc_out=. \
+    helloworld.proto
+protoc \
+    -I=. -I=${GOPATH}/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@v2.0.0/third_party/googleapis \
+    --grpc-gateway_out=logtostderr=true:. \
+    helloworld.proto
+protoc \
+    -I=. -I=${GOPATH}/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@v2.0.0/third_party/googleapis \
+    --swagger_out=. \
+    helloworld.proto
+```
+
+第一个为 grpc 生成，第二个为生成 `gateway` 第三个通过 Swagger 格式文件用于描述接口规范
