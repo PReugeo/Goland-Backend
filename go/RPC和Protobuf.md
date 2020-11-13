@@ -440,6 +440,54 @@ protoc --go_out=. hello.proto
 
 该语句意思为，使用 prtoc-gen-go 插件生成代码到当前目录。
 
+#### go_option
+
+在使用 protoc 时需要声明 `go_option` ，首先其目录结构如下
+
+![image-20201109194025513](RPC和Protobuf.assets/image-20201109194025513.png)
+
+文件 go.mod 声明的 module 名为 `module github.com/PREugeo/pb-demo` ，proto 文件夹下含有两个 gRPC 服务，一般情况下，我们会将编译生成的 pb.go 文件生成在与 proto 文件相同的目录，这样我们就不需要再创建相同的目录层级结构来存放 pb.go 文件了。由于同一文件夹下的 pb.go 文件同属于一个 package，所以**在定义 proto 文件的时候，相同文件夹下的 proto 文件也应声明为同一的 package，并且和文件夹同名**，这是因为生成的 pb.go 文件的 package 是取自 proto package 的。**且同属于一个包内的 proto 文件互相引用也需要import** 。
+
+在引用包时，需要指明 `--proto_path=… ` 或者 `-I=...` 来帮助 protoc 找寻被引用的 proto 文件，一般建议需要引用的包均放入项目中，因为执行 `protoc`命令时，`import` 的路径并不是基于项目 module 路径而是前面两个参数，否则会报无法找到包错误。
+
+本项目编译命令为
+
+```shell
+ protoc --proto_path=. --go_out=. ./proto/user/*.proto # 编译 user 路径下所有 proto 文件
+```
+
+其中，`--go_out` 参数是用来指定 *protoc-gen-go 插件的工作方式* 和 *go 代码目录架构的生成位置*，可以向 `--go_out` 传递很多参数，见 [golang/protobuf 文档](https://github.com/golang/protobuf#parameters) 。主要的两个参数为 **plugins** 和 **paths** ，代表 生成 go 代码所使用的插件 和 生成的 go 代码的目录怎样架构。**`--go_out` 参数的写法是，参数之间用逗号隔开，最后加上冒号来指定代码目录架构的生成位置，例如：`--go_out=plugins=grpc,paths=import:.`** 。**paths 参数有两个选项，`import` 和 `source_relative` 。默认为 `import` ，代表按照生成的 go 代码的包的全路径去创建目录层级，`source_relative` 代表按照 proto 源文件的目录层级去创建 go 代码的目录层级，如果目录已存在则不用创建**。
+
+所以如果使用了 `option go_package` 声明则需要命令行使用 `--go_out=paths=source_relative:.` 
+
+* go_package 声明是为了让生成的其他 go 包可以正确 `import` 到本包
+* --go_out=paths=source_relative:. 则是为了将其编译到相同目录
+
+所以当 `proto` 文件为
+
+```protobuf
+// ./proto/api/api.proto
+syntax = "proto3";
+
+package api;
+option go_package="micro-prime/proto/api";
+
+import "github.com/micro/go-micro/v2@v2.9.1/api/proto/api.proto";
+
+service Open {
+  rpc Fetch (go.api.Request) returns (go.api.Response);
+}
+
+```
+
+其编译命令则是
+
+```shell
+protoc -I=${GOPATH}/pkg/mod/ -I=. --go_out=paths=source_relative:. --micro_out=paths=source_relative:. ./proto/api/api.proto
+```
+
+
+
 ### 2.使用 gRPC 生成
 
 使用 `protoc --go_out=plugins=grpc:. hello.proto` 可以使用 protoc-gen-go 中自带的 grpc 插件生成 RPC 代码，该语句才会生成 proto 文件中 service 部分。
