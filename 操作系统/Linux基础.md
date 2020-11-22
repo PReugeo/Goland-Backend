@@ -190,7 +190,7 @@ windows中：xshell，putty进行服务器
 
 # 开源许可证
 
-![img](D:\Java-golang-learning\java\static\开源许可证.png)
+![img](../java\static\开源许可证.png)
 
 
 
