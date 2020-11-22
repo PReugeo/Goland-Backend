@@ -184,13 +184,13 @@ windows中：xshell，putty进行服务器
 
 ## VIM 快捷键
 
-![img](D:\Java-golang-learning\java\static\vim.gif)
+![img](.images\vim.gif)
 
 
 
 # 开源许可证
 
-![img](../java\static\开源许可证.png)
+![img](.images\开源许可证.png)
 
 
 
@@ -298,7 +298,7 @@ inode 具有以下特点：
 - /usr (unix software resource)：所有系统默认软件都会安装到这个目录；
 - /var (variable)：存放系统或程序运行过程中的数据文件。
 
-![img](D:\Java-golang-learning\操作系统\img\linux-filesystem.png)
+![img](.images\linux-filesystem.png)
 
 
 
@@ -378,7 +378,7 @@ example: find . -name "shadow"
 
 +4、4 和 -4 的指示的时间范围如下：
 
-![img](D:\Java-golang-learning\操作系统\img\时间范围.png)
+![img](.images\时间范围.png)
 
 
 
@@ -444,7 +444,7 @@ netstat -anp | grep port #查看特定端口的进程
 |  Z   | zombie (terminated but not reaped by its parent) 僵死，进程已经终止但是尚未被其父进程获取信息。 |
 |  T   | stopped (either by a job control signal or because it is being traced) 结束，进程既可以被作业控制信号结束，也可能是正在被追踪 |
 
-![img](..\操作系统\img\进程图.png)
+![img](.images\进程图.png)
 
 
 

@@ -358,7 +358,7 @@ Golang 使用的垃圾回收机制是三色标记法配合写屏障和辅助 GC�
 4.  重复步骤3，直到灰色对象队列为空。此时白色对象即为垃圾，进行回收。
 
 
-![img](go%E5%9F%BA%E7%A1%80.assets/16c9abaa4032c7ea)
+![img](.images/16c9abaa4032c7ea)
 
 # GC 完整流程
 
@@ -387,7 +387,7 @@ Golang 使用的垃圾回收机制是三色标记法配合写屏障和辅助 GC�
 - 强三色不变性 — 黑色对象不会指向白色对象，只会指向灰色对象或者黑色对象；
 - 弱三色不变性 — 黑色对象指向的白色对象必须包含一条从灰色对象经由多个白色对象的可达路径
 
-![2020-03-16-15843705141834-strong-weak-tricolor-invariant](go%E5%9F%BA%E7%A1%80.assets/2020-03-16-15843705141834-strong-weak-tricolor-invariant.png)
+![2020-03-16-15843705141834-strong-weak-tricolor-invariant](.images/2020-03-16-15843705141834-strong-weak-tricolor-invariant.png)
 
 Go 采用的为混合写屏障
 

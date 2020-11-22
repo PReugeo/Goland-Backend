@@ -238,7 +238,7 @@ message Foo {
 
 `repeated` 字段：可以在一个 message 中重复任何数字多次，可以理解为数组
 
-![img](RPC%E5%92%8CProtobuf.assets/84_3.png)
+![img](.images/84_3.png)
 
 ### 4.枚举类型
 
@@ -395,7 +395,7 @@ Proto3 支持 JSON 中的规范编码，使系统之间共享数据变得更加�
 
 如果 JSON 编码数据中缺少值或其值为空，则在解析为 protocol buffer 时，它将被解释为适当的默认值。如果一个字段在协议缓冲区中具有默认值，默认情况下它将在 JSON 编码数据中省略以节省空间。具体 Mapping 的实现可以提供选项决定是否在 JSON 编码的输出中发送具有默认值的字段。
 
-![img](RPC%E5%92%8CProtobuf.assets/84_4.png)
+![img](.images/84_4.png)
 
 ### 11.proto3 定义 RPC Serivces
 

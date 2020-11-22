@@ -14,7 +14,7 @@ FastDFS 系统有三个角色：跟踪服务器(Tracker Server)、存储服务�
 
 上传过程:
 
-![](Untitled.assets/856154-20171012121639387-1574147926.png)
+![](.images/856154-20171012121639387-1574147926.png)
 
 下载过程与上传过程相似。在downloadfile时客户端可以选择任意tracker  server。tracker发送download请求给某个tracker，必须带上文件名信息，tracke从文件名中解析出文件的group、大小、创建时间等信息，然后为该请求选择一个storage用来服务读请求。
 

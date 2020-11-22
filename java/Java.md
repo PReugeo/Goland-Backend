@@ -103,7 +103,7 @@ Java 不能隐式向下转型（精度高 -> 精度低）
 
 Java 中有三个访问权限修饰符：public，private，protected，不加修饰符为 default 
 
-![img](D:\Java-golang-learning\java\static\修饰符权限.png)
+![img](.images/修饰符权限.png)
 
 ### 抽象类与接口
 

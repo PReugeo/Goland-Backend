@@ -8,7 +8,7 @@
 
 ### MapReduce过程概览
 
-![](D:\Java-golang-learning\bigData\MapReduce.assets/20181203204646963.png)
+![](.images/20181203204646963.png)
 
 ### 核心概念
 
@@ -111,7 +111,9 @@
             job.setPartitionerClass(MyPartitioner.class);
             //设置4个reducer， 每个分区一个
             job.setNumReduceTasks(4);
-    ```
+  ```
+  ```
+  
   ```
 
 
@@ -122,7 +124,7 @@
 
 19888端口默认不开启
 
-​```xml
+```xml
     <!--jobhistory启动配置 mapred-site.xml-->
     <property>
         <name>mapreduce.jobhistory.address</name>
@@ -152,10 +154,10 @@
     <property>
         <name>yarn.log-aggregation.retain-seconds</name>
         <value>302400</value>
-	    <description>
-		     日志文件保存在文件系统（如HDFS文件系统）的最长时间，默认值是-1，即永久有效。
-		     这里配置的值是：7天 = 3600 * 24 * 7 = 302400
-		</description>
+        <description>
+    	     日志文件保存在文件系统（如HDFS文件系统）的最长时间，默认值是-1，即永久有效。
+    	     这里配置的值是：7天 = 3600 * 24 * 7 = 302400
+    	</description>
     </property>
   ```
 
@@ -170,7 +172,7 @@
 
 ## WordCount
 
-```java
+​```java
 	public void map(Object key, Text value, Context context) throws IOException,InterruptedException {
 		StringTokenizer itr = new StringTokenizer(value.toString());
 		while(itr.hasMoreTokens()) {
@@ -186,5 +188,5 @@
 		result.set(sum);
 		context.write(key,result);
 	}
-```
+  ```
 

@@ -30,7 +30,7 @@ func main() {
 
 首先在 `helloworld` 中或者表单值，以及提交的 `get` 值， 在 `main` 函数 中调用了 `http.HandleFunc` 来绑定函数调用，随后启动监听端口来进行服务。
 
-![image-20200821121140068](net%E5%8C%85%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90.assets/image-20200821121140068.png)
+![image-20200821121140068](.images/image-20200821121140068.png)
 
 因此可以得到 Go 的 `net/http` 包 Web 服务的基本流程
 
