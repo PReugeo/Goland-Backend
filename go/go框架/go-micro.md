@@ -66,7 +66,7 @@ API 网关一共有 5 种类型：
 
 go-micro 框架主要由以下模块组成：
 
-![Image for post](.images/1*VdeGqjujc-pfL73JGLI3-w@2x.png)
+![Image for post](.images/micro.png)
 
 **Service**：
 
