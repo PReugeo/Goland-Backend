@@ -22,8 +22,6 @@ man 是 manual 的缩写，将指令的具体信息显示出来。
 
 info 与 man 类似，但是 info 将文档分成一个个页面，每个页面可以进行跳转。
 
-
-
 ## doc
 
 /usr/share/doc 存放着软件的一整套说明文件。
@@ -71,6 +69,19 @@ tar   解压缩.tar  -cf创建压缩文件 -tvf  显示压缩文件中文件的�
 -xzvf  .gz文件解压缩
 
 -czvf   压缩.gz文件
+
+zip unzip 打包解压 .zip 文件
+
+history 查看历史命令 ! + 编号即可复制历史命令
+
+sed 文件修改
+
+1. 替换文件内容 aaa 换成 bbb `sed -i 's/aaa/bbb/g' filename`
+2. 删除文件内容 `sed -i 1,3d filename`
+
+awk 文本处理
+
+![image-20210705115300368](.images/image-20210705115300368.png)
 
 ## 服务器资源信息查看
 
@@ -183,6 +194,34 @@ windows中：xshell，putty进行服务器
 - 指令列模式（Bottom-line mode）：按下 ":" 按键之后进入，用于保存退出等操作。
 
 ## VIM 快捷键
+
+**移动光标命令：**
+
+h, j, k, l 光标移动
+
+ctrl + f 上一页
+
+ctrl + b 下一页
+
+w,e  跳到单词的后面
+
+b, B 跳到单词前面
+
+gg 第一行
+
+G 最后一行
+
+**复制粘贴：**
+
+dd 剪切一行 xdd 剪切 x 行
+
+dw 删除一个单词
+
+x 删除一个字符
+
+yy 复制一行 xyy 复制 x 行
+
+p ， P 粘贴光标下一行，上一行
 
 ![img](.images\vim.gif)
 
@@ -297,6 +336,18 @@ inode 具有以下特点：
 - / (root, 根目录)
 - /usr (unix software resource)：所有系统默认软件都会安装到这个目录；
 - /var (variable)：存放系统或程序运行过程中的数据文件。
+
+其他目录如下：
+
+* /bin：二进制目录，存放GNU用户级贡酒
+* /dev：设备目录，存放各种设备节点
+* /etc：系统配置文件目录
+* /home：用户主目录
+* /lib：库目录
+* /media：媒体目录，存放可移动媒体设备挂载点
+* /mnt：挂载目录
+* /opt：通常存放可选的软件包
+* /sbin：GNU管理员级工具
 
 ![img](.images\linux-filesystem.png)
 
