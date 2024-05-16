@@ -45,7 +45,7 @@ func findKthLargest(nums []int, k int) int {
 
 // partition 操作
 func partition(nums []int, start, end int) int {
-    // 随机初始化第一个元素，防止递归树过深
+    // 随机初始化第一个元素，防止递归树过深 
     if end > start {
         randomIndex := start + 1 + rand.Intn(end - start)
         nums[start], nums[randomIndex] = nums[randomIndex], nums[start]
