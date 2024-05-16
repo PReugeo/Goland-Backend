@@ -22,6 +22,21 @@ func twoSum(nums []int, target int) []int {
 ```
 时间复杂度O(n)
 
+## Python 解法
+
+```python
+class Solution:
+    def twoSum(self, nums: List[int], target: int) -> List[int]:
+        res_map = {}
+        for i in range(len(nums)):
+            num = target - nums[i]
+            if num in res_map:
+                return [res_map[num], i]
+            res_map[nums[i]] = i
+        return []
+```
+
 ## 分析:
+
    遍历 nums 将nums中数字存入HashMap的key中其数组下标存入value中,继续遍历若找到HashMap中有与nums[i]相加为target值的数则返回map中存入的i与当前i
 

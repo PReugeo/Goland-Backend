@@ -22,6 +22,8 @@ man 是 manual 的缩写，将指令的具体信息显示出来。
 
 info 与 man 类似，但是 info 将文档分成一个个页面，每个页面可以进行跳转。
 
+
+
 ## doc
 
 /usr/share/doc 存放着软件的一整套说明文件。
@@ -70,19 +72,6 @@ tar   解压缩.tar  -cf创建压缩文件 -tvf  显示压缩文件中文件的�
 
 -czvf   压缩.gz文件
 
-zip unzip 打包解压 .zip 文件
-
-history 查看历史命令 ! + 编号即可复制历史命令
-
-sed 文件修改
-
-1. 替换文件内容 aaa 换成 bbb `sed -i 's/aaa/bbb/g' filename`
-2. 删除文件内容 `sed -i 1,3d filename`
-
-awk 文本处理
-
-![image-20210705115300368](.images/image-20210705115300368.png)
-
 ## 服务器资源信息查看
 
 内存： free -m
@@ -106,6 +95,41 @@ visudo 修改权限
 scp加入文件名后就是下载文件 
 
 一直运行命令 nohup command &(后台运行)
+
+
+
+## 网络命令
+
+`nc`（netcat） 用于设置路由器的相关参数
+
+参数
+
+```shell
+-g<网关> 设置路由器跃程通信网关，最多可设置8个。
+-G<指向器数目> 设置来源路由指向器，其数值为4的倍数。
+-h 在线帮助。
+-i<延迟秒数> 设置时间间隔，以便传送信息及扫描通信端口。
+-l 使用监听模式，管控传入的资料。
+-n 直接使用IP地址，而不通过域名服务器。
+-o<输出文件> 指定文件名称，把往来传输的数据以16进制字码倾倒成该文件保存。
+-p<通信端口> 设置本地主机使用的通信端口。
+-r 乱数指定本地与远端主机的通信端口。
+-s<来源位址> 设置本地主机送出数据包的IP地址。
+-u 使用UDP传输协议。
+-v 显示指令执行过程。
+-w<超时秒数> 设置等待连线的时间。
+-z 使用0输入/输出模式，只在扫描通信端口时使用。
+```
+
+作用： 监听端口，连接远程主机，端口扫描，文件传输，克隆设备，打开 shell 等
+
+参考： [Linux nc命令详解 - 华为云 (huaweicloud.com)](https://www.huaweicloud.com/articles/7f323edef71be76eb5705275718ecfef.html)
+
+`netstat` 主要用于查看本机的网络信息和状态。后面的参数 -i 查看网卡列表，-n 个数 -p 进程，-t 链接的 tcp，-u udp，-l 监听 -r 路由信息，-g 组播信息，-e 查看网口的统计信息
+
+`lsof` 是可以查看系统文件的工具（linux 下一切皆文件，可以查看常规文件以及网络连接和硬件以及网络传输协议等）
+
+参考：[3. lsof 一切皆文件 — Linux Tools Quick Tutorial (linuxtools-rst.readthedocs.io)](https://linuxtools-rst.readthedocs.io/zh_CN/latest/tool/lsof.html)
 
 ## 修改时区
 
@@ -194,34 +218,6 @@ windows中：xshell，putty进行服务器
 - 指令列模式（Bottom-line mode）：按下 ":" 按键之后进入，用于保存退出等操作。
 
 ## VIM 快捷键
-
-**移动光标命令：**
-
-h, j, k, l 光标移动
-
-ctrl + f 上一页
-
-ctrl + b 下一页
-
-w,e  跳到单词的后面
-
-b, B 跳到单词前面
-
-gg 第一行
-
-G 最后一行
-
-**复制粘贴：**
-
-dd 剪切一行 xdd 剪切 x 行
-
-dw 删除一个单词
-
-x 删除一个字符
-
-yy 复制一行 xyy 复制 x 行
-
-p ， P 粘贴光标下一行，上一行
 
 ![img](.images\vim.gif)
 
@@ -336,18 +332,6 @@ inode 具有以下特点：
 - / (root, 根目录)
 - /usr (unix software resource)：所有系统默认软件都会安装到这个目录；
 - /var (variable)：存放系统或程序运行过程中的数据文件。
-
-其他目录如下：
-
-* /bin：二进制目录，存放GNU用户级贡酒
-* /dev：设备目录，存放各种设备节点
-* /etc：系统配置文件目录
-* /home：用户主目录
-* /lib：库目录
-* /media：媒体目录，存放可移动媒体设备挂载点
-* /mnt：挂载目录
-* /opt：通常存放可选的软件包
-* /sbin：GNU管理员级工具
 
 ![img](.images\linux-filesystem.png)
 
@@ -528,3 +512,20 @@ netstat -anp | grep port #查看特定端口的进程
 
 要消灭系统中大量的僵尸进程，只需要将其父进程杀死，此时僵尸进程就会变成孤儿进程，从而被 init 进程所收养，这样 init 进程就会释放所有的僵尸进程所占有的资源，从而结束僵尸进程。
 
+
+
+## CA 证书缺失，屏蔽检查
+
+\# touch /etc/apt/apt.conf.d/99verify-peer.conf
+
+\# echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
+
+
+
+## Yum 升级 gcc
+
+**sudo yum install centos-release-scl
+sudo yum install devtoolset-7-gcc\*
+scl enable devtoolset-7 bash
+which gcc
+gcc --version**
